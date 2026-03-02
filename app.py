@@ -3,11 +3,10 @@ import pandas as pd
 import datetime
 import logging
 
-# Módulos do projeto
-# Certifique-se de que os arquivos data_loader.py, admin_report.py e indicadores_clinicos.py estão na mesma pasta
-from data_loader import load_redcap_data 
-import admin_report 
+# Módulos do projeto - Verifique se o nome do arquivo é indicadores_clinicos.py
 import indicadores_clinicos 
+from data_loader import load_redcap_data 
+import admin_report
 
 # --- Configuração da Página ---
 st.set_page_config(
@@ -58,21 +57,14 @@ def get_data(api_key_geral, api_key_enfermagem):
         logging.error(f"Falha ao carregar dados do REDCap: {e}")
         raise e 
 
-# Tenta carregar as credenciais do secrets.toml
 try:
-    # O Streamlit busca automaticamente no arquivo .streamlit/secrets.toml
     df_admin_data, df_clinical_data = get_data(
         st.secrets["api_key_geral"], 
         st.secrets["api_key_enfermagem"]
     )
-except FileNotFoundError:
-    st.error("Arquivo de segredos não encontrado. Verifique se a pasta .streamlit/secrets.toml existe.")
-    st.stop()
-except KeyError as e:
-    st.error(f"Chave de segredo não encontrada: {e}. Verifique o arquivo secrets.toml.")
-    st.stop()
 except Exception as e:
     st.error(f"Erro ao carregar dados do REDCap: {e}")
+    st.error("Verifique suas chaves de API, URLs e permissões.")
     st.stop()
 
 
@@ -121,7 +113,8 @@ with tab_medica:
         taxa_resol_48h, num_resol, num_altas_resol = indicadores_clinicos.calculate_taxa_resolicitacao_48h(
             df_clinical_data, selected_month, selected_year
         )
-        smr, taxa_obs, taxa_esp = indicadores_clinicos.calculate_smr(
+        # --- Chamada da função (Certifique-se de que os nomes à esquerda do = são estes) ---
+        smr, taxa_obs, taxa_esp, m_saps = indicadores_clinicos.calculate_smr(
             df_clinical_data, selected_month, selected_year
         )
         sru, dias_obs, dias_esp = indicadores_clinicos.calculate_sru(
@@ -129,21 +122,24 @@ with tab_medica:
         )
 
         # --- Exibição ---
-        st.write("#### Indicadores de Gravidade (Admissão)")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric(
-                label="Média SAPS-3 (Pontos)",
-                value=f"{media_saps_pontos:.1f}",
-                help=f"Média da pontuação SAPS-3 para {num_pac_saps} pacientes admitidos no período."
-            )
-        with col2:
-            st.metric(
-                label="Média SAPS-3 (%)",
-                value=f"{media_saps_perc:.1f} %",
-                help=f"Média da probabilidade de mortalidade (SAPS-3 %) para {num_pac_saps} pacientes admitidos no período."
-            )
         
+        #st.write("#### Indicadores de Gravidade (Admissão)")
+        #col1, col2, col3 = st.columns(3)
+        #with col1:
+        #    st.metric(
+        #        label="Média SAPS-3 (Pontos)",
+        #        value=f"{media_saps_pontos:.1f}",
+        #        help=f"Média da pontuação SAPS-3 para {num_pac_saps} pacientes admitidos no período."
+        #    )
+        #with col2:
+        #    st.metric(
+        #        label="Média SAPS-3 (%)",
+        #        value=f"{media_saps_perc:.1f} %",
+        #        help=f"Média da probabilidade de mortalidade (SAPS-3 %) para {num_pac_saps} pacientes admitidos no período."
+        #    )
+        
+        #st.write(f"DEBUG: Pacientes no dataframe: {len(df_clinical_data)}")
+        # Se este número for 0, o problema é no carregamento dos dados (data_loader).
         st.markdown("---")
         st.write("#### Indicadores de Resultado")
         col4, col5, col6 = st.columns(3)
@@ -186,9 +182,9 @@ with tab_medica:
         
         with col9:
             st.metric(
-                label="Densidade de Infecção (ICS)",
+                label="Densidade de Infecção (CVC)",
                 value=f"{taxa_inf_cvc:.1f}",
-                help=f"Total de Infecções de CVC/ICS ({num_inf_cvc}) dividido pelo total de CVC-dias ({num_cvc_dias_inf}) no período, x 1000."
+                help=f"Total de Infecções de CVC ({num_inf_cvc}) dividido pelo total de CVC-dias ({num_cvc_dias_inf}) no período, x 1000."
             )
         
         with col10:
@@ -216,28 +212,46 @@ with tab_medica:
                 help=f"Total de dias evitados ({num_dias_evit}) dividido pelo total de Paciente-dias ({num_pac_dias_evit}) no período."
             )
             
+                # --- Bloco de exibição (Copie exatamente assim) ---
         st.markdown("---")
         st.write("#### Indicadores de Desempenho (SMR / SRU)")
-        
-        col14, col15, col16 = st.columns(3)
+
+        col14, col15, col16, col17 = st.columns(4)
+
         with col14:
             st.metric(
-                label="SMR (Taxa de Mortalidade Padronizada)",
+                label="SMR (Padronizado)",
                 value=f"{smr:.2f}",
-                help=f"Taxa Observada ({taxa_obs:.1f}%) / Taxa Esperada ({taxa_esp:.1f}%). Filtro pelo mês do desfecho hospitalar."
+                delta=f"{smr - 1:.2f}", # if smr > 0 else None
+                delta_color="inverse",
+                help="SMR = Taxa Observada / Taxa Esperada. Calculado sobre a média SAPS 3 do mês."
             )
-        
+
         with col15:
             st.metric(
-                label="SRU (Uso Padronizado de Recursos)",
-                value=f"{sru:.2f}",
-                help=f"Dias Observados ({dias_obs:.0f}) / Dias Esperados ({dias_esp:.1f}). Filtro por sobreviventes com desfecho no mês."
+                label="Mort. Observada",
+                value=f"{taxa_obs:.1f} %",  # Agora o nome 'taxa_obs' existe acima!
+                help="Porcentagem real de óbitos na UTI no mês selecionado."
             )
 
-    else:
-        st.warning("Não foi possível carregar os dados clínicos.")
+        with col16:
+            st.metric(
+                label="Mort. Esperada",
+                value=f"{taxa_esp:.1f} %",
+                help="Mortalidade esperada calculada via Equação Padrão sobre a média do SAPS 3."
+            )
+            
+        with col17:
+            st.metric(
+                label="Média SAPS 3",
+                value=f"{m_saps:.1f} pts",
+                help="Média das pontuações SAPS 3 dos pacientes do período."
+            )
 
-# --- Aba 2: Enfermagem ---
+        # Se quiser manter o SRU abaixo ou em outra linha:
+        st.info(f"**Nota:** O cálculo do SMR agora utiliza a média do SAPS 3 do período ({m_saps:.1f} pts) como denominador da equação de mortalidade esperada.")
+
+# --- Aba 2: Enfermagem (MODIFICADA) ---
 with tab_enfermagem:
     st.subheader("Indicadores de Enfermagem")
     
