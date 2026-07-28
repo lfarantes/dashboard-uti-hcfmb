@@ -1,0 +1,6 @@
+# Ignorar o ambiente virtual
+.venv/
+*.venv/
+
+# Ignorar o arquivo de segredos do Streamlit
+.streamlit/secrets.toml

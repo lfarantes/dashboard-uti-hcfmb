@@ -1,0 +1,14 @@
+credentials:
+  usernames:
+    lucas:
+      email: lfarantes@gmail.com
+      name: Lucas Arantes
+      password: '$2b$12$3FwmtJ2twqyhouZ7EV.ln.XivnsBPVotkinQJZcmx4PxwP7f0QPby' # Use uma senha forte
+    joao:
+      email: joao@exemplo.com
+      name: João da Silva
+      password: '$2b$12$EfWJZslMvaT8mW4JZNA5AuZKuD5Uen510oEhzCDOXvKG2qtwhpicC'
+cookie:
+  expiry_days: 1
+  key: random_signature_key
+  name: dashboard_uti_key

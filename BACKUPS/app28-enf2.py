@@ -1,0 +1,262 @@
+import streamlit as st
+import pandas as pd
+import datetime
+import logging
+
+# Módulos do projeto
+from data_loader import load_redcap_data 
+import admin_report 
+import indicadores_clinicos26 
+
+# --- Configuração da Página ---
+st.set_page_config(
+    page_title="Dashboard UTI Clínica",
+    page_icon="🏥",
+    layout="wide"
+)
+
+# --- Sidebar de Filtros ---
+with st.sidebar:
+    st.title("Filtros de Análise")
+    today = datetime.date.today()
+    default_year = today.year
+    default_month = today.month
+    year_options = list(range(default_year - 5, default_year + 1))
+    selected_year = st.selectbox(
+        "Ano", 
+        options=year_options, 
+        index=len(year_options) - 1
+    )
+    months = {
+        "Janeiro": 1, "Fevereiro": 2, "Março": 3, "Abril": 4, 
+        "Maio": 5, "Junho": 6, "Julho": 7, "Agosto": 8, 
+        "Setembro": 9, "Outubro": 10, "Novembro": 11, "Dezembro": 12
+    }
+    month_name = st.selectbox(
+        "Mês", 
+        options=months.keys(), 
+        index=default_month - 1
+    )
+    selected_month = months[month_name]
+
+    st.markdown("---") 
+
+    if st.button("Recarregar Dados (Limpar Cache)"):
+        st.cache_data.clear()
+        st.rerun()
+
+# --- Carregamento dos Dados ---
+@st.cache_data 
+def get_data(api_key_geral, api_key_enfermagem):
+    try:
+        df_admin, df_clinico = load_redcap_data(api_key_geral, api_key_enfermagem)
+        logging.info(f"Dados admin carregados: {df_admin.shape[0]} linhas")
+        logging.info(f"Dados clínicos carregados: {df_clinico.shape[0]} linhas") 
+        return df_admin, df_clinico
+    except Exception as e:
+        logging.error(f"Falha ao carregar dados do REDCap: {e}")
+        raise e 
+
+try:
+    df_admin_data, df_clinical_data = get_data(
+        st.secrets["api_key_geral"], 
+        st.secrets["api_key_enfermagem"]
+    )
+except Exception as e:
+    st.error(f"Erro ao carregar dados do REDCap: {e}")
+    st.error("Verifique suas chaves de API, URLs e permissões.")
+    st.stop()
+
+
+# --- Título Principal ---
+st.title(f"Dashboard de Gestão – UTI Clínica")
+st.markdown(f"### Análise de {month_name} de {selected_year}")
+
+# --- Criação das Abas ---
+tab_admin, tab_medica, tab_enfermagem, tab_fisioterapia, tab_nutricao = st.tabs(
+    ["Administrativo", "Médica", "Enfermagem", "Fisioterapia", "Nutrição"]
+)
+
+# --- Aba 1: Administrativo ---
+with tab_admin:
+    if not df_admin_data.empty:
+        admin_report.display_admin_metrics(df_admin_data, selected_month, selected_year)
+    else:
+        st.warning("Não foi possível carregar os dados administrativos.")
+
+# --- Aba 2: Médica ---
+with tab_medica:
+    st.subheader("Indicadores Médicos")
+    if not df_clinical_data.empty:
+        
+        taxa_mortalidade, num_obitos, num_desfechos = indicadores_clinicos26.calculate_taxa_mortalidade_uti(
+            df_clinical_data, selected_month, selected_year
+        )
+        
+        st.metric(
+            label="Taxa de Mortalidade UTI",
+            value=f"{taxa_mortalidade:.1f} %",
+            help=f"Baseado em {num_obitos} óbito(s) e {num_desfechos} desfecho(s) total(is) no período selecionado."
+        )
+        
+        st.markdown("---")
+        st.markdown("*Indicadores SAPS-3, Mortalidade Hospitalar, Reinternação... em breve.*")
+    else:
+        st.warning("Não foi possível carregar os dados clínicos.")
+
+# --- Aba 3: Enfermagem (COM A NOVA FUNÇÃO) ---
+with tab_enfermagem:
+    st.subheader("Indicadores de Enfermagem")
+    
+    if not df_clinical_data.empty:
+        
+        st.write("#### Indicadores de Utilização de Dispositivos (Diário)")
+        
+        # --- Cálculo dos Indicadores ---
+        taxa_cvc, num_cvc_dias, num_pac_dias_cvc = indicadores_clinicos26.calculate_taxa_utilizacao_cvc(
+            df_clinical_data, selected_month, selected_year
+        )
+        # --- NOVO CÁLCULO ---
+        taxa_svd, num_svd_dias, num_pac_dias_svd = indicadores_clinicos26.calculate_taxa_utilizacao_svd(
+            df_clinical_data, selected_month, selected_year
+        )
+        
+        # --- Exibição dos Indicadores ---
+        col1, col2, col3, col4 = st.columns(4) 
+
+        with col1:
+            st.metric(
+                label="Taxa de Utilização de CVC",
+                value=f"{taxa_cvc:.1f} %",
+                help=f"Total de CVC-dias ({num_cvc_dias}) dividido pelo total de Paciente-dias ({num_pac_dias_cvc}) no período."
+            )
+        
+        # --- NOVA MÉTRICA ---
+        with col2:
+            st.metric(
+                label="Taxa de Utilização de SVD",
+                value=f"{taxa_svd:.1f} %",
+                help=f"Total de SVD-dias ({num_svd_dias}) dividido pelo total de Paciente-dias ({num_pac_dias_svd}) no período."
+            )
+        
+        st.markdown("---")
+        st.markdown("*Indicadores de Diálise, DVA, LPP e Flebite... em breve.*")
+    else:
+        st.warning("Não foi possível carregar os dados clínicos.")
+
+# --- Aba 4: Fisioterapia ---
+with tab_fisioterapia:
+    st.subheader("Indicadores de Fisioterapia")
+    
+    if not df_clinical_data.empty:
+        
+        # --- Cálculo dos Indicadores ---
+        media_dias_vm, total_dias_vm, total_pac_vm = indicadores_clinicos26.calculate_tempo_medio_vm(
+            df_clinical_data, selected_month, selected_year
+        )
+        taxa_util_vm, num_vm_dias, num_pac_dias = indicadores_clinicos26.calculate_taxa_utilizacao_vm(
+            df_clinical_data, selected_month, selected_year
+        )
+        taxa_eot_pal, num_eot_pal, num_eot_total_pal = indicadores_clinicos26.calculate_taxa_eot_paliativa(
+            df_clinical_data, selected_month, selected_year
+        )
+        taxa_eot_acid, num_eot_acid, num_eot_total_acid = indicadores_clinicos26.calculate_taxa_eot_acidental(
+            df_clinical_data, selected_month, selected_year
+        )
+        taxa_re_iot, num_re_iot, num_eot_planejadas = indicadores_clinicos26.calculate_taxa_re_iot(
+            df_clinical_data, selected_month, selected_year
+        )
+
+        # --- Exibição dos Indicadores ---
+        st.write("#### Indicadores de Ventilação Mecânica (VM)")
+        col1, col2 = st.columns(2) 
+        
+        with col1:
+            st.metric(
+                label="Tempo Médio de VM",
+                value=f"{media_dias_vm:.1f} dias",
+                help=f"Baseado em {total_dias_vm} dias totais de VM, dividido por {total_pac_vm} pacientes únicos em VM no período."
+            )
+        
+        with col2:
+            st.metric(
+                label="Taxa de Utilização de VM",
+                value=f"{taxa_util_vm:.1f} %",
+                help=f"Total de VM-dias ({num_vm_dias}) dividido pelo total de Paciente-dias ({num_pac_dias}) no período."
+            )
+        
+        st.markdown("---")
+        st.write("#### Indicadores de Extubação (EOT)")
+        col3, col4, col5 = st.columns(3)
+
+        with col3:
+            st.metric(
+                label="Proporção EOT Paliativa",
+                value=f"{taxa_eot_pal:.1f} %",
+                help=f"Total de EOTs Paliativas ({num_eot_pal}) dividido pelo total de EOTs ({num_eot_total_pal}) no período. Filtro pela data do evento."
+            )
+            
+        with col4:
+            st.metric(
+                label="Taxa EOT Acidental",
+                value=f"{taxa_eot_acid:.1f} %",
+                help=f"Total de EOTs Acidentais ({num_eot_acid}) dividido pelo total de EOTs ({num_eot_total_acid}) no período. Filtro pela data do evento."
+            )
+        
+        with col5:
+            st.metric(
+                label="Taxa Re-IOT 48h",
+                value=f"{taxa_re_iot:.1f} %",
+                help=f"Total de Re-IOTs ({num_re_iot}) dividido pelo total de EOTs Planejadas ({num_eot_planejadas}) no período. Filtro pela data do evento."
+            )
+        
+        st.markdown("---")
+        st.markdown("*Todos os indicadores de Fisioterapia implementados.*")
+    else:
+        st.warning("Não foi possível carregar os dados clínicos.")
+
+# --- Aba 5: Nutrição ---
+with tab_nutricao:
+    st.subheader("Indicadores de Nutrição")
+    
+    if not df_clinical_data.empty:
+        
+        # --- Cálculo dos Indicadores ---
+        taxa_desnutricao, num_desnutridos, num_admissoes = indicadores_clinicos26.calculate_taxa_desnutricao(
+            df_clinical_data, selected_month, selected_year
+        )
+        taxa_dieta, vol_infundido, vol_prescrito = indicadores_clinicos26.calculate_relacao_dieta(
+            df_clinical_data, selected_month, selected_year
+        )
+        media_dias_meta, total_dias, total_pac_meta = indicadores_clinicos26.calculate_tempo_ate_meta(
+            df_clinical_data, selected_month, selected_year
+        )
+
+        # --- Exibição dos Indicadores ---
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric(
+                label="Taxa de Desnutrição (Admissão)",
+                value=f"{taxa_desnutricao:.1f} %",
+                help=f"Baseado em {num_desnutridos} paciente(s) desnutridos e {num_admissoes} admissão(ões) total(is) no período. Filtro pelo mês de admissão."
+            )
+        
+        with col2:
+            st.metric(
+                label="Relação Prescrito vs. Infundido",
+                value=f"{taxa_dieta:.1f} %",
+                help=f"Total Infundido: {vol_infundido:,.0f} mL / Total Prescrito: {vol_prescrito:,.0f} mL. Filtro pelos registros diários do mês."
+            )
+        
+        with col3:
+            st.metric(
+                label="Tempo Médio até a Meta",
+                value=f"{media_dias_meta:.1f} dias",
+                help=f"Soma de {total_dias:,.0f} dias até a meta, dividido por {total_pac_meta} pacientes admitidos no período. Filtro pelo mês de admissão."
+            )
+
+        st.markdown("---")
+        st.markdown("*Todos os indicadores de Nutrição implementados.*")
+    else:
+        st.warning("Não foi possível carregar os dados clínicos.")
